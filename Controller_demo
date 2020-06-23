@@ -1,0 +1,134 @@
+1. Ensure a single instance of Pod nginx is running on each node of the Kubernetes cluster
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: ds.nginx
+  name: ds.nginx
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - image: nginx
+        name: nginx
+
+
+2. Deployment with 3 replicas，update and rollback
+
+#Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: nginx-app
+  name: nginx-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx-r
+  template:
+    metadata:
+      labels:
+        app: nginx-r
+    spec:
+      containers:
+      - image: nginx:1.11.9-alpine
+        name: nginx
+
+#Update
+kubectl set image deployment nginx-app nginx=nginx:1.12.0-alpine --record
+
+#Rollback
+kubectl rollout undo deployment nginx-app --to-revision=xxx
+
+3. Create statefulset object with image：nginx and pvc： www
+   additional: create svc accrodingly 
+   
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  ports:
+  - port: 80
+    name: web
+  clusterIP: None
+  selector:
+    app: nginx
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  serviceName: "nginx"
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: nginx
+        image: nginx
+        ports:
+        - containerPort: 80
+          name: web
+        volumeMounts:
+        - name: www
+          mountPath: /usr/share/nginx/html
+  volumeClaimTemplates:
+  - metadata:
+      name: www
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 500M
+
+4. create a job/cronjob ，computes π to 2000 places and prints it out
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pi
+spec:
+  template:
+    spec:
+      containers:
+      - name: pi
+        image: perl
+        command: ["perl",  "-Mbignum=bpi", "-wle", "print bpi(2000)"]
+      restartPolicy: Never
+  backoffLimit: 4
+---
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: cronpi
+spec:
+  schedule: "*/1 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: pi
+            image: perl
+            command: ["perl",  "-Mbignum=bpi", "-wle", "print bpi(2000)"]
+          restartPolicy: Never
+      backoffLimit: 4
